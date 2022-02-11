@@ -1,0 +1,8 @@
+#+title: Geo-Algebra
+
+This module is a work in progress.
+
+Currently, the default metric is for 3-dimensional Conformal Geometric
+Algebra. However, it's easy to change, just set =global-algebra= to
+another algebra. You can see how to create algebras and metrics in
+=algebras.rkt= and =metrics.rkt= respectively.
