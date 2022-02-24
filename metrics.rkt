@@ -1,18 +1,23 @@
 #lang racket
 
-(require "structs.rkt")
-
 (provide make-diagonal-metric
          make-conformal-metric
-         lookup-metric)
+         lookup-metric
+         metric-factory)
+
+(define multivector-maker (make-parameter #f))
+(define blade-maker (make-parameter #f))
 
 ;; A ProductMetric is an interface that implements
 ;;
-;; - make-metric : Number -> ProductMetric
 ;; - lookup-metric : ProductMetric (List-of Dim) (List-of Dim) -> BasisBlade
 ;; - store-metric-value! : ProductMetric (List-of Dim) (List-of Dim) -> BasisBlade
 ;;
 ;; The default should be 0.0
+
+;; - make-metric : Number -> ProductMetric
+
+;;;; Utilities
 
 ;; dims->index : List-of Dim -> Integer
 ;; converts a list of dims to an integer used for storing and retrieving the metric value
@@ -21,6 +26,58 @@
       0
       ;; Dimensions are mapped to 2^x
       (apply + (map (λ (x) (expt 2 x)) dims))))
+
+;;;; Interfaces
+
+
+(define metric-interface
+  (interface ()
+    ;; lookup : (List-of Dim) (List-of Dim) -> BasisBlade
+    lookup
+    ;; store-value! : (List-of Dim) (List-of Dim) Blade -> Void
+    store-value!))
+
+;;;; Metrics
+
+;; A NullMetric-over X is a Class that represents the simplest metric over an algebraic structure X.
+;;  (new null-metric% [zero-el X])
+;; The metric returns a zero-like element for any and all pairs of elements.
+(define null-metric%
+  (class* object% (metric-interface)
+    (init zero-el)
+    (super-new)
+
+
+    ;; zero-element : X
+    ;; The zero-like element that the base algebra is over
+    ;; For real numbers this would be 0,
+    ;; for complex, 0+0i,
+    ;; etc.
+    ;; These examples would all be covered by 0 though, by Scheme's numeric tower.
+    ;; However, if we want more generic algebras, we need this.
+    (define zero-element zero-el)
+    
+    ;; The main hash table that store the metric results
+    ;; Extended by children to be non-null
+    (define metric-hash (make-hash))
+
+    ;; lookup-metric : (List-of Dim) (List-of Dim) -> Number
+    ;; looks up the value of a product on the metric table
+    (define/public (lookup-metric metric l-dims r-dims)
+      (let ([l-index (dims->index l-dims)]
+            [r-index (dims->index r-dims)])
+        (hash-ref metric-hash (cons l-index r-index) zero-element)))
+
+    ;; store-metric-value! : (List-of Dim) (List-of Dim) Element -> Element
+    ;; stores a value in the metric table
+    (define/private (store-metric-value! l-dims r-dims val)
+      (let ([l-index (dims->index l-dims)]
+            [r-index (dims->index r-dims)])
+        (hash-set! metric-hash (cons l-index r-index) val)))
+
+    
+    ))
+
 
 ;; make-empty-metric : -> ProductMetric
 ;; creates a new product metric initialized to always return 0.0
@@ -100,14 +157,14 @@
                            c)))])))
   (let-values ([(dims coef) (simplify-dims sorted-dims empty 1.0)])
     (if (symbol=? parity 'even)
-        (multivector (list (make-blade coef dims)))
-        (multivector (list (make-blade (- coef) dims))))))
+        ((multivector-maker) (list ((blade-maker) coef dims)))
+        ((multivector-maker) (list ((blade-maker) (- coef) dims))))))
 
 ;; cache-metric! : ProductMetric Integer AList-> Void
 ;; effect: populates the metric with the basis blade products
 (define (cache-metric! metric dimension metric-alist)
-  (for* ([left (in-combinations (inclusive-range 1 dimension))]
-         [right (in-combinations (inclusive-range 1 dimension))])
+  (for* ([left (in-combinations (range 0 dimension))]
+         [right (in-combinations (range 0 dimension))])
     (let ([b (apply-metric left right metric-alist)])
       (store-metric-value! metric left right b))))
 
@@ -137,12 +194,12 @@
 
 ;; make-conformal-metric : Integer -> ProductMetric
 ;; creates the geometric product metric for an n-dimensional conformal space
-;;      o 1 2 3 inf
-;;   o  0 0 0 0 -1
-;;   1  0 1 0 0 0
-;;   2  0 0 1 0 0
-;;   3  0 0 0 1 0
-;; inf -1 0 0 0 0
+;;      0  1  2  o  inf
+;;   0  1  0  0  0  0
+;;   1  0  1  0  0  0
+;;   2  0  0  1  0  0
+;;   o  0  0  0  0 -1
+;; inf  0  0  0 -1  0
 ;; 
 (define (make-conformal-metric dimension)
   (let* ([o-dim (list dimension)]
@@ -155,3 +212,8 @@
                                                (list (make-blade -1.0 '())
                                                      (make-blade -1.0 (append o-dim inf-dim)))))
     metric))
+
+(define ((metric-factory metric-maker . args) mv-maker b-maker zero-mv)
+  (parameterize ([multivector-maker mv-maker]
+                 [blade-maker b-maker])
+    (apply metric-maker args)))
