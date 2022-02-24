@@ -2,6 +2,8 @@
 
 (require "geometric-algebra.rkt")
 
+(provide (all-defined-out))
+
 ;; The default export is conformal, because that's what I'm using
 
 ;; 0 1 2 are X Y Z
@@ -32,11 +34,11 @@
     (map blade-coef (filter identity blades))))
 
 
-(define b0 (mv: 1.0 0))
-(define b1 (mv: 1.0 1))
-(define b2 (mv: 1.0 2))
-(define no (mv: 1.0 3))
-(define ni (mv: 1.0 4))
+(define b0 (mv: (b: 1.0 0)))
+(define b1 (mv: (b: 1.0 1)))
+(define b2 (mv: (b: 1.0 2)))
+(define no (mv: (b: 1.0 3)))
+(define ni (mv: (b: 1.0 4)))
 (define no-ni (mv:wedge no ni))
 
 ;; Multivector -> Multivector
@@ -150,7 +152,7 @@
 ;; by reflecting a point in the plane
 ;; and finding the midpoint between the midpoint and the original point
 (define (project-point->plane pt plane)
-  (let* ([reflected-pt (mv:sandwich pt pl)]
+  (let* ([reflected-pt (mv:sandwich pt plane)]
          [mid-point (mv:scale (mv:+ (conf-point->euclid pt)
                                    (conf-point->euclid reflected-pt))
                              0.5)])
@@ -165,7 +167,7 @@
          [pt-on-plane (project-point->plane P circle-plane)]
          [circle-center (extract-center C)]
          [line-through-center (mv:wedge* pt-on-plane circle-center ni)]
-         [intersection (mv:undual (mv:wedge (mv:dual L) (mv:dual C)))])
+         [intersection (mv:undual (mv:wedge (mv:dual line-through-center) (mv:dual C)))])
     (point-pair->closest-point intersection P)))
 
 ;; Multivector Multivector -> Multivector
