@@ -16,20 +16,20 @@
 
 
 (geo (C: (1.0 1) (1.0 2)) (C: (1.0 1) (1.0 3)))
-(mul (d: 1) 3)
+(geo (d: 3) (mul (d: 1) 3))
 
 
-(define (r)
-  (- (* (random) 2) 1))
+;; (define (r)
+;;   (- (* (random) 2) 1))
 
-(define (rotate R x)
-  (geo* (g:exp (scale R -0.5))
-        x
-        (g:exp (scale R 0.5))))
+;; (define (rotate R x)
+;;   (geo* (g:exp (scale R -0.5))
+;;         x
+;;         (g:exp (scale R 0.5))))
 
-(define (cost G Pa Pb)
-  (let loop ([total (zero-like (first Pa))] [Pas Pa] [Pbs Pb])
-    (if (empty? Pa)
-        ;; TODO when converting from number, we need to convert it to the base field first!
-        (div total (length Pa))
-        (add total (sqnorm (sub (rotate G (first Pas)) (first Pbs)))))))
+;; (define (cost G Pa Pb)
+;;   (let loop ([total (zero-like (first Pa))] [Pas Pa] [Pbs Pb])
+;;     (if (empty? Pa)
+;;         ;; TODO when converting from number, we need to convert it to the base field first!
+;;         (div total (length Pa))
+;;         (add total (sqnorm (sub (rotate G (first Pas)) (first Pbs)))))))

@@ -4,6 +4,7 @@
 (require "generic.rkt")
 (require "generic-arith.rkt")
 (require "metric-defs.rkt")
+(require "blades.rkt")
 
 (require (for-syntax syntax/parse))
 
@@ -33,11 +34,28 @@ elements are distinct.
     ;; -> X
     ;; returns the zero-like additive identity of the algebra
     zero-element
+    
     ;; -> X
     ;; returns the one-like multiplicative identity of the algebra
     one-element
+    
+    ;; Base -> X
+    ;; converts a value of the base structure to an element
+    ;; for R this would be identity
+    ;; but for other, richer structures, this might be something else
+    ;; like 0 -> 0+0i
+    base->element
+    
+    ;; A -> X
+    ;; converts from the lowest base algebra to this level
+    ->element
+
+    ;; Any -> Bool
+    ;; determines if a value is an element of the algebra
+    element-of?
+    
     ;; Addition, Subtraction, Multiplication, and Division
-    ))
+    f:+ f:- f:* f:/))
 
 
 
@@ -47,7 +65,22 @@ elements are distinct.
     (define/public (zero-element)
       0.0)
     (define/public (one-element)
-      1.0)))
+      1.0)
+    (define/public (base->element val)
+      val)
+    (define/public (->element val)
+      val)
+    (define/public (element-of? val)
+      (number? val))
+    (define/public (f:+ left right)
+      (+ left right))
+    (define/public (f:- left right)
+      (- left right))
+    (define/public (f:* left right)
+      (* left right))
+    (define/public (f:/ left right)
+      (/ left right))
+    ))
 
 ;; An AlgebraicOperation is a function
 ;;
@@ -127,49 +160,32 @@ elements are distinct.
     (init-field p q r [base-field (new real-numbers%)])
     (super-new)
 
+
+    
     (define base-one (send base-field one-element))
     (define base-zero (send base-field zero-element))
     (define base-neg-one (neg base-one))
     
-    ;; A Dim is a NonnegativeInteger
-    ;; interpretation: the index of a spatial dimension, starting with 0
-
-    ;;;; Blades
-
-    (define (blade-print blade port mode)
-      (when mode (write-string "b[" port))
-      (write (blade-coef blade) port)
-      (write-string "b" port)
-      (display (apply string-append (map number->string (blade-dims blade))) port)
-      (when mode (write-string "]" port)))
-
-    (struct blade (coef dims grade)
-      #:methods gen:custom-write
-      [(define write-proc blade-print)])
-    ;; A BasisBlade is a structure
-    ;;  (struct Number List-of Dim Integer)
-    ;; interpretation: a basis blade is one of the fundamental building blocks of
-    ;; geometric algebra. It represents a weighted, oriented graded subspace of the
-    ;; generating field.
-
-    ;; Number (List-of Dim) -> Blade
-    ;; creates a blade
-    (define (make-blade coef dims)
-      (blade coef dims (length dims)))
-
-    ;; Number Dim* -> Blade
-    ;; a shorthand for creating blades
-    (define (b: c . dims)
-      (make-blade c dims))
 
     (define zero-blade (make-blade base-zero '()))
     (define one-blade (make-blade base-one '()))
     (define neg-one-blade (make-blade base-neg-one '()))
 
-    ;; Blade -> Multivector
-    ;; converts a blade to a multivector
-    (define (blade->multivector b)
-      (multivector (list b)))
+    ;;;; Metric definitions
+
+    (define num-dimensions (+ p q r))
+
+    (define wedge-metric (new diagonal-metric% [p 0] [q 0] [r num-dimensions]
+                              [pos-el base-one]
+                              [neg-el base-neg-one]
+                              [zero-el base-zero]
+                              [element-fn make-blade]))
+    
+    (define metric (new diagonal-metric% [p p] [q q] [r r]
+                        [pos-el base-one]
+                        [neg-el base-neg-one]
+                        [zero-el base-zero]
+                        [element-fn make-blade]))
 
     ;;;; Multivectors
 
@@ -198,6 +214,12 @@ elements are distinct.
           zero-mv
           (multivector (sort-blades (simplify-blades blades)))))
 
+    ;; Blade -> Multivector
+    ;; converts a blade to a multivector
+    (define (blade->multivector b)
+      (multivector (list b)))
+
+
     (define zero-mv (multivector (list zero-blade)))
     (define one-mv (multivector (list one-blade)))
 
@@ -213,245 +235,18 @@ elements are distinct.
     (define (mv: . blades)
       (make-multivector blades))
 
-    ;; Multivector -> Number
-    ;; converts a scalar multivector to the number
-    (define (multivector->scalar mv)
+    ;; Multivector -> F
+    ;; converts a scalar multivector to the base field value
+    (define (multivector->base mv)
       (if (mv:is-scalar? mv)
           (blade-coef (first (multivector-blades mv)))
-          (error 'multivector->scalar "~a is not a scalar multivector" mv)))
-
-    ;; Number -> Multivector
-    ;; converts a scalar to a multivector
-    (define (scalar->multivector c)
-      (multivector (list (make-blade c '()))))
-
+          (error 'multivector->base "~a is not a scalar multivector" mv)))
+    
     ;; Multivector -> Multivector
     ;; filters the grades of a multivector
     (define (select-grade mv g)
       (multivector (filter (λ (b) (= g (blade-grade b)))
                            (multivector-blades mv))))
-
-    ;; List-of Blade -> List-of Blade
-    ;; sorts a list of blades by length and then by numberic value
-    (define (sort-blades blades)
-      (define (blade<? l r)
-        (let ([l-grade (blade-grade l)]
-              [r-grade (blade-grade r)])
-          (cond [(= l-grade r-grade)
-                 (let loop ([l (blade-dims l)] [r (blade-dims r)])
-                   (cond [(empty? l) #f]
-                         [(= (first l) (first r)) (loop (rest l) (rest r))]
-                         [else (< (first l) (first r))]))]
-                [(< l-grade r-grade) #t]
-                [else #f])))
-      (sort blades blade<?))
-
-    ;; List-of Blade -> List-of Blade
-    ;; simplifies a multivector by combining basis elements
-    (define (simplify-blades blades)
-      ;; Blade Blade -> Bool
-      ;; determines if the basis dimensions are the same
-      ;; assumption: the dimensions are in canonical order
-      (define (same-basis? left right)
-        (let ([l-dims (blade-dims left)]
-              [r-dims (blade-dims right)])
-          (equal? l-dims r-dims)))
-      ;; Blade Blade -> Blade
-      ;; combines two blades with the same basis elements
-      ;; assumption: the blades have the same basis dimensions
-      (define (simplify left right)
-        (let ([l-coef (blade-coef left)]
-              [r-coef (blade-coef right)])
-          (make-blade (add l-coef r-coef) (blade-dims left))))
-      ;; List-of Blade -> List-of Blade
-      ;; filters out the blades that have a zero coefficient
-      (define (filter-zero-coef-blades lob)
-        (filter (λ (b) (not (g:= (blade-coef b) 0)))
-                lob))
-      (let outer-loop ([simplified '()] [blades blades])
-        (if (empty? blades)
-            (if (empty? simplified)
-                (list zero-blade)
-                (let ([non-zero-blades (filter-zero-coef-blades simplified)])
-                  (if (empty? non-zero-blades)
-                      (list zero-blade)
-                      non-zero-blades)))
-            (let inner-loop ([current (first blades)] [passed-blades '()] [rem-blades (rest blades)])
-              (if (empty? rem-blades)
-                  (outer-loop (cons current simplified)
-                              passed-blades)
-                  (let ([next-blade (first rem-blades)])
-                    (if (same-basis? current next-blade)
-                        (inner-loop (simplify current next-blade)
-                                    passed-blades
-                                    (rest rem-blades))
-                        (inner-loop current
-                                    (cons next-blade passed-blades)
-                                    (rest rem-blades)))))))))
-
-
-    ;;;; Metric definitions
-
-    (define num-dimensions (+ p q r))
-
-    (define wedge-metric (new diagonal-metric% [p 0] [q 0] [r num-dimensions]
-                              [pos-el base-one]
-                              [neg-el base-neg-one]
-                              [zero-el base-zero]
-                              [element-fn (λ (c dims)
-                                            (mv: (apply b: c dims)))]))
-    
-    (define metric (new diagonal-metric% [p p] [q q] [r r]
-                        [pos-el base-one]
-                        [neg-el base-neg-one]
-                        [zero-el base-zero]
-                        [element-fn (λ (c dims)
-                                      (mv: (apply b: c dims)))]))
-    
-    ;;;; Blade Operations
-
-    ;; Blade+ -> Multivector
-    ;; returns the sum of blades
-    (define (b:+ . xs)
-      (if (empty? xs)
-          (error 'b:+ "No blades passed to +")
-          (make-multivector xs)))
-
-    ;; Blade+ -> Multivector
-    ;; returns the negation of a blade or
-    ;; (first xs) - (sum (rest xs))
-    (define b:-
-      (case-lambda
-        [() (error 'b:- "No blades passed to -")]
-        [(x) (make-blade (neg (blade-coef x)) (blade-dims x))]
-        [xs (apply b:+ (first xs) (map b:- (rest xs)))]))
-
-    ;; Blade Number -> Blade
-    ;; scales a blade's coefficient by c
-    (define (b:scale b c)
-      (make-blade (mul (blade-coef b) c)
-                  (blade-dims b)))
-
-    ;; Blade -> Blade
-    ;; computes the versor inverse of a blade
-    (define (b:inv b)
-      (let ([sqnorm (multivector->scalar (b:geo b (b:reverse b)))])
-        (b:scale b (div 1 sqnorm))))
-
-    ;; Blade Blade -> Blade
-    ;; multiply x by the inverse of y
-    (define (b:/ x y)
-      (b:geo x (b:inv y)))
-
-    ;;; Products
-
-    ;; Blade Blade -> Multivector
-    ;; computes the wedge product of two basis blades
-    (define (b:wedge left right)
-      (let* ([l-coef (blade-coef left)]
-             [l-dims (blade-dims left)]
-             [r-coef (blade-coef right)]
-             [r-dims (blade-dims right)]
-             [result-blade (metric-lookup wedge-metric l-dims r-dims)])
-        (mv:scale result-blade (mul l-coef r-coef))))
-
-    ;; Blade Blade -> Multivector
-    ;; computes the geometric product of two basis-blades
-    (define (b:geo left right)
-      (let* ([l-coef (blade-coef left)]
-             [l-dims (blade-dims left)]
-             [r-coef (blade-coef right)]
-             [r-dims (blade-dims right)]
-             [result-mv (metric-lookup metric l-dims r-dims)])
-        (mv:scale result-mv (mul l-coef r-coef))))
-
-    ;; Blade Blade -> Multivector
-    ;; computes the left contraction of a and b
-    (define (b:contractl a b)
-      (let ([a-grade (blade-grade a)]
-            [b-grade (blade-grade b)])
-        (if (<= a-grade b-grade)
-            (select-grade (b:geo a b) (- b-grade a-grade))
-            zero-mv)))
-
-    ;; Blade Blade -> Multivector
-    ;; computes the right contraction of a and b
-    (define (b:contractr a b)
-      (let ([a-grade (blade-grade a)]
-            [b-grade (blade-grade b)])
-        (if (>= a-grade b-grade)
-            (select-grade (b:geo a b) (- a-grade b-grade))
-            zero-mv)))
-
-    ;; Blade Blade -> Multivector
-    ;; computes the dot product of two blades
-    (define (b:dot a b)
-      (let ([a-grade (blade-grade a)]
-            [b-grade (blade-grade b)])
-        (if (<= a-grade b-grade)
-            (b:contractl a b)
-            (b:contractr a b))))
-
-    ;; Blade Blade -> Multivector
-    ;; computes the Hestenes metric product of a and b
-    (define (b:hest a b)
-      (let ([a-grade (blade-grade a)]
-            [b-grade (blade-grade b)])
-        (if (or (= a-grade 0) (= b-grade 0))
-            zero-mv
-            (b:dot a b))))
-
-    ;; Blade Blade -> Multivector
-    ;; computes the scalar product of a and b
-    (define (b:scalar a b)
-      (select-grade (b:geo a b) 0))
-
-    ;; Blade Blade -> Multivector
-    ;; computes the commutator product of a and b
-    (define (b:commutator a b)
-      (mv:scale (mv:- (b:geo a b)
-                      (b:geo b a))
-                0.5))
-
-    ;; Blade Blade -> Multivector
-    ;; computes the anti-commutator product of a and b
-    (define (b:anti-commutator a b)
-      (mv:scale (mv:+ (b:geo a b)
-                      (b:geo b a))
-                0.5))
-
-    ;;; Grade-dependent sign calculations
-
-    ;; Integer -> Number
-    ;; returns the multiplier for the reversion of a grade g blade
-    (define (reversion-multiplier g)
-      (expt -1.0 (* g (- g 1) 0.5)))
-
-    ;; Blade -> Blade
-    ;; computes the reversion of a blade
-    (define (b:reverse b)
-      (b:scale b (reversion-multiplier (blade-grade b))))
-
-    ;; Integer -> Number
-    ;; returns the multiplier for the involution of a grade g blade
-    (define (involution-multiplier g)
-      (expt -1.0 g))
-
-    ;; Blade -> Blade
-    ;; returns the involution of a blade
-    (define (b:involute b)
-      (b:scale b (involution-multiplier (blade-grade b))))
-
-    ;; Integer -> Number
-    ;; returns the multiplier for the Clifford conjugation of a grade g blade
-    (define (conjugation-multiplier g)
-      (expt -1.0 (* g (+ g 1) 0.5)))
-
-    ;; Blade -> Blade
-    ;; returns the Clifford conjugate of a blade
-    (define (b:conjugate b)
-      (b:scale b (conjugation-multiplier (blade-grade b))))
-
 
     ;;;; Multivector Operations
 
@@ -463,14 +258,15 @@ elements are distinct.
           (make-multivector (flatten (map multivector-blades xs)))))
 
     ;; Multivector+ -> Multivector
-    ;; returns either the negation of a single argument or
-    ;; (first xs) - (sum (rest xs))
-    (define mv:-
-      (case-lambda
-        [() (error 'mv:- "No multivectors passed to -")]
-        [(x) (make-multivector (map b:- (multivector-blades x)))]
-        [xs (apply mv:+ (first xs) (map mv:- (rest xs)))]))
+    ;; returns (first xs) - (sum (rest xs))
+    (define (mv:- . xs)
+      (apply mv:+ (first xs) (map mv:neg (rest xs))))
 
+    ;; Multivector -> Multivector
+    ;; returns the negation of each of the multivectors blades
+    (define (mv:neg x)
+      (multivector (map b:neg (multivector-blades x))))
+    
     ;; Multivector Number -> Multivector
     ;; scales a multivectors coefficients by c
     (define (mv:scale mv c)
@@ -479,7 +275,7 @@ elements are distinct.
     ;; Multivector -> Multivector
     ;; computes the versor inverse of a multivector
     (define (mv:inv mv)
-      (let ([sqnorm (multivector->scalar (mv:geo mv (mv:reverse mv)))])
+      (let ([sqnorm (multivector->base (mv:geo mv (mv:reverse mv)))])
         (mv:scale mv (div 1 sqnorm))))
 
     ;; Multivector Multivector -> Multivector
@@ -512,7 +308,7 @@ elements are distinct.
     ;; Multivector -> Number
     ;; computes the norm of a multivector
     (define (mv:norm A)
-      (sqrt (multivector->scalar (mv:sqnorm A))))
+      (sqrt (multivector->base (mv:sqnorm A))))
 
     ;;; Products
 
@@ -523,33 +319,33 @@ elements are distinct.
              (for*/list ([l (in-list (multivector-blades left))]
                          [r (in-list (multivector-blades right))])
                (op l r))])
-        (apply mv:+ unsimplified)))
+        (make-multivector unsimplified)))
 
-    (define mv:wedge (lift-product->multivector b:wedge))
-    (define mv:geo (lift-product->multivector b:geo))
-    (define mv:contractl (lift-product->multivector b:contractl))
-    (define mv:contractr (lift-product->multivector b:contractr))
-    (define mv:dot (lift-product->multivector b:dot))
-    (define mv:hest (lift-product->multivector b:hest))
-    (define mv:scalar (lift-product->multivector b:scalar))
+    (define mv:wedge (lift-product->multivector (curry b:metric-product wedge-metric)))
+    (define mv:geo (lift-product->multivector (curry b:metric-product metric)))
+    (define mv:contractl (lift-product->multivector (curry b:contractl metric)))
+    (define mv:contractr (lift-product->multivector (curry b:contractr metric)))
+    (define mv:dot (lift-product->multivector (curry b:dot metric)))
+    (define mv:hest (lift-product->multivector (curry b:hest metric)))
+    (define mv:scalar (lift-product->multivector (curry b:scalar metric)))
 
-    ;; Multivector Multivector -> Multivector
-    ;; computes the sandwich product of O I O^-1
-    (define (mv:sandwich inside outside)
-      (mv:geo* outside inside (mv:inv outside)))
+    ;; ;; Multivector Multivector -> Multivector
+    ;; ;; computes the sandwich product of O I O^-1
+    ;; (define (mv:sandwich inside outside)
+    ;;   (mv:geo* outside inside (mv:inv outside)))
 
-    ;; [MV MV -> MV] -> [MV+ -> MV]
-    ;; lifts a binary operation to an arbitrary number of operators
-    (define ((lift-binary->n-ary op) . xs)
-      (foldl op (first xs) (rest xs)))
+    ;; ;; [MV MV -> MV] -> [MV+ -> MV]
+    ;; ;; lifts a binary operation to an arbitrary number of operators
+    ;; (define ((lift-binary->n-ary op) . xs)
+    ;;   (foldl op (first xs) (rest xs)))
 
-    (define mv:wedge* (lift-binary->n-ary mv:wedge))
-    (define mv:geo* (lift-binary->n-ary mv:geo))
-    (define mv:contractl* (lift-binary->n-ary mv:contractl))
-    (define mv:contractr* (lift-binary->n-ary mv:contractr))
-    (define mv:dot* (lift-binary->n-ary mv:dot))
-    (define mv:hest* (lift-binary->n-ary mv:hest))
-    (define mv:scalar* (lift-binary->n-ary mv:scalar))
+    ;; (define mv:wedge* (lift-binary->n-ary mv:wedge))
+    ;; (define mv:geo* (lift-binary->n-ary mv:geo))
+    ;; (define mv:contractl* (lift-binary->n-ary mv:contractl))
+    ;; (define mv:contractr* (lift-binary->n-ary mv:contractr))
+    ;; (define mv:dot* (lift-binary->n-ary mv:dot))
+    ;; (define mv:hest* (lift-binary->n-ary mv:hest))
+    ;; (define mv:scalar* (lift-binary->n-ary mv:scalar))
 
     ;;; Nonlinear Operations
 
@@ -665,15 +461,47 @@ elements are distinct.
     (define/public (make-element . blades)
       (apply mv: (map (curry apply b:) blades)))
 
+
+    ;; Implementation of field<%>
+
     (define/public (zero-element) zero-mv)
     (define/public (one-element) one-mv)
+    
+    ;; F -> Multivector
+    ;; converts an element of the base field to a multivector
+    (define/public (base->element c)
+      (multivector (list (make-blade c '()))))
+
+    ;; X -> Multivector
+    ;; converts a number to a multivector through the proper chain
+    ;; of nested algebras where X is the type of the lowest algebra
+    (define/public (->element c)
+      (let ([base-el (send base-field ->element c)])
+        (base->element base-el)))
+
+    (define/public (element-of? val)
+      (multivector? val))
+
+    (define/public (f:+ left right)
+      (mv:+ left right))
+
+    (define/public (f:- left right)
+      (mv:- left right))
+
+    (define/public (f:* left right)
+      (mv:geo left right))
+
+    (define/public (f:/ left right)
+      (mv:/ left right))
+
+
 
     ;; HACK This is only here to get the testing of dual numbers == 0 to work
     ;; TODO generalize this by making a special dual-number algebra class
     ;; MV Number -> Bool
     ;; Tests if the scalar part is equal to a number
     (define (mv:scalar-= x num)
-      (let ([x (multivector->scalar (select-grade x 0))])
+      (let ([x (multivector->base (select-grade x 0))])
         (= x num)))
 
     (define/implementation (g:= [x multivector?] [y number?])
@@ -691,10 +519,10 @@ elements are distinct.
              (define/implementation (method-name [x multivector?] [y multivector?]) body ...)
              (define/implementation (method-name [x number?] [y multivector?])
                ((lambda (x y) body ...)
-                (scalar->multivector x) y))
+                (->element x) y))
              (define/implementation (method-name [x multivector?] [y number?])
                ((lambda (x y) body ...)
-                x (scalar->multivector y))))]))
+                x (->element y))))]))
 
     (define-binary-op-implementation (add x y) (mv:+ x y))
     ;; (define/implementation (add [x multivector?] [y multivector?]) (mv:+ x y))
@@ -734,7 +562,7 @@ elements are distinct.
     (define/implementation (g:sinh [x multivector?]) (mv:sinh x))
     
     
-    (define/implementation (->number [x multivector?]) (multivector->scalar x))))
+    (define/implementation (->number [x multivector?]) (multivector->base x))))
 
 (define-syntax (define-algebra stx)
   (syntax-parse stx 
