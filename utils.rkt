@@ -20,3 +20,15 @@
               (cons (if (odd? index) one zero)
                     choices))
         choices)))
+
+(define-syntax-rule (map/method obj meth xs)
+  (map (λ (x) (send obj meth x)) xs))
+
+(define (approx-= x y [tol 1e-10])
+  (< (abs (- x y)) tol))
+
+(define (approx-zero? x [tol 1e-10])
+  (approx-= x 0 tol))
+
+(define (approx-one? x [tol 1e-10])
+  (approx-= x 1 tol))

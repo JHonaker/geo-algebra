@@ -1,10 +1,13 @@
 #lang racket
 
-(require "generic.rkt")
+(require "generic.rkt"
+         "utils.rkt")
 
 (provide
  zero-like
  one-like
+ eq-zero?
+ eq-one?
  add
  sub
  mul
@@ -13,29 +16,35 @@
  scale
  inverse
  neg
+ 
  g:exp
  g:cos
  g:sin
  g:cosh
  g:sinh
- g:=
- g:<
- g:>
- g:<=
- g:>=
+ 
+ sqnorm
+ norm
+
+ add*
+ sub*
+ mul*
  )
 
 (define/generic (zero-like x))
 (define/generic (one-like x))
+(define/generic (eq-zero? x))
+(define/generic (eq-one? x))
 
 (define/implementation (zero-like [x number?]) 0.0)
 (define/implementation (one-like [x number?]) 1.0)
+(define/implementation (eq-zero? [x number?]) (approx-zero? x))
+(define/implementation (eq-one? [x number?]) (= x 1))
 
 (define/generic (add x y))
 (define/generic (sub x y))
 (define/generic (mul x y))
 (define/generic (div x y))
-(define/generic (ldiv x y))
 (define/generic (scale x y))
 (define/generic (inverse x))
 (define/generic (neg x))
@@ -44,7 +53,6 @@
 (define/implementation (sub [x number?] [y number?]) (- x y))
 (define/implementation (mul [x number?] [y number?]) (* x y))
 (define/implementation (div [x number?] [y number?]) (/ x y))
-(define/implementation (ldiv [x number?] [y number?]) (/ y x))
 (define/implementation (scale [x number?] [y number?]) (* x y))
 (define/implementation (inverse [x number?]) (/ 1 x))
 (define/implementation (neg [x number?]) (- x))
@@ -61,15 +69,14 @@
 (define/implementation (g:cosh [x number?]) (cosh x))
 (define/implementation (g:sinh [x number?]) (sinh x))
 
-(define/generic (g:= x y))
-(define/generic (g:< x y))
-(define/generic (g:> x y))
-(define/generic (g:<= x y))
-(define/generic (g:>= x y))
+(define/generic (sqnorm x))
+(define/generic (norm x))
 
-(define/implementation (g:= [x number?] [y number?]) (= x y))
-(define/implementation (g:< [x number?] [y number?]) (< x y))
-(define/implementation (g:> [x number?] [y number?]) (> x y))
-(define/implementation (g:<= [x number?] [y number?]) (<= x y))
-(define/implementation (g:>= [x number?] [y number?]) (>= x y))
+(define/implementation (sqnorm [x number?]) (expt x 2))
+(define/implementation (norm [x number?]) (abs x))
 
+(define (add* . xs) (foldl add (zero-like (first xs)) xs))
+(define (sub* . xs) (foldl sub (first xs) (rest xs)))
+(define (mul* . xs) (foldl mul (one-like (first xs)) xs))
+
+(define (ldiv x y) (mul (inverse x) y))

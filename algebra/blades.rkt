@@ -3,7 +3,9 @@
 (provide (all-defined-out))
 
 (require "metric-defs.rkt")
-(require "generic-arith.rkt")
+(require "../generic-arith.rkt")
+
+(require memo)
 
 ;; A Dim is a NonnegativeInteger
 ;; interpretation: the index of a spatial dimension, starting with 0
@@ -18,6 +20,7 @@
   (when mode (write-string "]" port)))
 
 (struct blade (coef dims grade)
+  #:transparent
   #:methods gen:custom-write
   [(define write-proc blade-print)])
 ;; A BasisBlade is a structure
@@ -33,17 +36,17 @@
 
 ;; zero-blade : Metric -> Blade
 ;; creates the zero-blade associated with a metric
-(define (zero-blade metric)
+(define/memoize (zero-blade metric)
   (make-blade (send metric zero-element) '()))
 
 ;; one-blade : Metric -> Blade
 ;; creates the one-blade associated with a metric
-(define (one-blade metric)
+(define/memoize (one-blade metric)
   (make-blade (send metric one-element) '()))
 
 ;; neg-one-blade : Metric -> Blade
 ;; creates the neg-one-blade associated with a metric
-(define (neg-one-blade metric)
+(define/memoize (neg-one-blade metric)
   (neg (one-blade metric)))
 
 ;; Number Dim* -> Blade
@@ -74,7 +77,7 @@
 
 ;; List-of Blade -> List-of Blade
 ;; simplifies a list of blades by combining basis elements
-(define (simplify-blades blades)
+(define (simplify-blades blades #:zero zero)
   ;; Blade Blade -> Bool
   ;; determines if the basis dimensions are the same
   ;; assumption: the dimensions are in canonical order
@@ -92,15 +95,15 @@
   ;; List-of Blade -> List-of Blade
   ;; filters out the blades that have a zero coefficient
   (define (filter-zero-coef-blades lob)
-    (filter (λ (b) (not (g:= (blade-coef b) 0)))
+    (filter (λ (b) (not (eq-zero? (blade-coef b))))
             lob))
   (let outer-loop ([simplified '()] [blades blades])
     (if (empty? blades)
         (if (empty? simplified)
-            (list zero-blade)
+            (list zero)
             (let ([non-zero-blades (filter-zero-coef-blades simplified)])
               (if (empty? non-zero-blades)
-                  (list zero-blade)
+                  (list zero)
                   non-zero-blades)))
         (let inner-loop ([current (first blades)] [passed-blades '()] [rem-blades (rest blades)])
           (if (empty? rem-blades)

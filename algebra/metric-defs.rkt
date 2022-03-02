@@ -2,7 +2,9 @@
 
 (provide
  metric-lookup
+ null-metric%
  diagonal-metric%
+ dual-metric%
  conformal-metric%
  conformal-metric-minkowski%)
 
@@ -43,6 +45,10 @@
     ;; Extended by children to be non-null
     (define metric-hash (make-hash))
 
+    ;; make-element : X Dims -> Y
+    ;; converts a "coefficient" and a list of dimensions to an element of the algebra
+    (define make-element element-fn)
+
     ;; zero-element : X
     ;; The zero-like element that the base algebra is over
     ;; For real numbers this would be 0,
@@ -50,18 +56,15 @@
     ;; etc.
     ;; These examples would all be covered by 0 though, by Scheme's numeric tower.
     ;; However, if we want more generic algebras, we need this.
-    (define zero-element zero-el)
+    (define zero-element (make-element zero-el '()))
 
-    ;; make-element : X Dims -> Y
-    ;; converts a "coefficient" and a list of dimensions to an element of the algebra
-    (define make-element element-fn)
     
     ;; lookup-metric : (List-of Dim) (List-of Dim) -> Number
     ;; looks up the value of a product on the metric table
     (define/public (lookup l-dims r-dims)
       (let ([l-index (dims->index l-dims)]
             [r-index (dims->index r-dims)])
-        (hash-ref metric-hash (cons l-index r-index) (make-element zero-element '()))))))
+        (hash-ref metric-hash (cons l-index r-index) zero-element)))))
 
 ;; A DiagonalMetric is a Class
 ;;  (new diagonal-metric% [p Int] [q Int] [r Int]
@@ -133,6 +136,63 @@
     (cache-metric! (+ p q r) (append (diagonal-helper p 0 1)
                                      (diagonal-helper q p -1)
                                      (diagonal-helper r (+ p q) 0)))))
+
+;; A DualMetric is a Class
+;;  (new dual-metric% [dims Int] [zero-el X]
+;;                    [element-fn (X Dims) -> Y)]
+;; It represents a metric over basis elements where
+;; all basis elements cancel
+(define dual-metric%
+  (class* object% (metric<%>) 
+    (init dims [one-el 1] [zero-el 0] [element-fn list])
+    (super-new)
+
+
+    ;; The main hash table that store the metric results
+    ;; Extended by children to be non-null
+    (define metric-hash (make-hash))
+
+    ;; The zero-like and one-like element in the base algebra
+    ;; For real numbers this would be 0 and 1
+    ;; for complex, 0+0i, 1+0i
+    ;; etc.
+    ;; These examples would all be covered by 0 and 1 by Scheme's numeric tower.
+    ;; However, if we want more generic algebras, we need this.
+
+    ;; one-element : X
+    (define one-element one-el)
+    
+    ;; zero-element : X
+    (define zero-element zero-el)
+
+    ;; make-element : X Dims -> Y
+    ;; converts a "coefficient" and a list of dimensions to an element of the algebra
+    (define make-element element-fn)
+
+    ;; lookup-metric : (List-of Dim) (List-of Dim) -> Number
+    ;; looks up the value of a product on the metric table
+    (define/public (lookup l-dims r-dims)
+      (let ([l-index (dims->index l-dims)]
+            [r-index (dims->index r-dims)])
+        (hash-ref metric-hash (cons l-index r-index) (make-element zero-element '()))))
+
+    ;; store-metric-value! : (List-of Dim) (List-of Dim) Element -> Element
+    ;; effect: stores a value in the metric table
+    (define/private (store-value! l-dims r-dims val)
+      (let ([l-index (dims->index l-dims)]
+            [r-index (dims->index r-dims)])
+        (hash-set! metric-hash (cons l-index r-index) val)))
+
+    ;; cache-metric! : Integer -> Void
+    ;; effect: populates the metric with the basis blade products
+    (define/private (cache-metric! dimension)
+      (store-value! '() '() (make-element one-element '()))
+      (for ([dim (in-range 0 dimension)])
+        (store-value! '() (list dim) (make-element one-element (list dim)))
+        (store-value! (list dim) '() (make-element one-element (list dim)))))
+
+    (cache-metric! dims)))
+
 
 ;; A ConformalMetric is a Class
 ;;  (new conformal-metric% [d Int]

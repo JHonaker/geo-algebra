@@ -132,3 +132,6 @@
      #'(define-generic-procedure-handler proc-name (match-args pred ...)
        (lambda (id ...)
          body ...))]))
+
+(define (any-type? . args)
+  #t)
